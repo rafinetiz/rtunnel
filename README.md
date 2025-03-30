@@ -8,9 +8,14 @@ make your cloudflare workers as tunnel for VLESS Protocol
 
 # Environment Variables
 
-| Name   | Required | Description                                           |
-| ------ | -------- | ----------------------------------------------------- |
-| `USER` | **Yes**  | User idenfication. currently only single user allowed |
+| Name          | Required | Description                                                        |
+| ------------- | -------- | ------------------------------------------------------------------ |
+| `USER`        | **Yes**  | User idenfication. currently only single user allowed              |
+| `SOCKS_RELAY` | **No**   | Relay all request to SOCKS5. default: false                        |
+| `SOCKS_HOST`  | **Yes**  | Required if `SOCKS_RELAY` is true. the SOCKS5 server to connect to |
+| `SOCKS_PORT`  | **Yes**  | Required if `SOCKS_RELAY` is true. the SOCKS5 port                 |
+| `SOCKS_USER`  | **No**   | User used for SOCKS5 authentication                                |
+| `SOCKS_PASS`  | **No**   | Password used for SOCKS5 authentication                            |
 
 # Known issues
 
