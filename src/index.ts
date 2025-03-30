@@ -1,5 +1,6 @@
 import { createConnection, Socket } from 'node:net';
 import { ParseProtocolData } from './utils';
+import Socks5 from './socks';
 
 interface ConnObj {
 	remote_socket?: Socket;
@@ -20,41 +21,65 @@ async function waitForFirstData(ws: WebSocket): Promise<Buffer<ArrayBuffer>> {
 	});
 }
 
-async function HandleWsUpgrade(ws: WebSocket, request: Request, user: Buffer<ArrayBuffer>): Promise<void> {
+interface Options {
+	user: Buffer<ArrayBuffer>;
+	early_data: string | null;
+	socks: {
+		relay: boolean;
+		host?: string;
+		port?: number;
+		user?: string;
+		pass?: string;
+	};
+}
+
+async function HandleWsUpgrade(ws: WebSocket, options: Options): Promise<void> {
 	ws.accept();
 
 	try {
-		const raw_data = request.headers.get('sec-websocket-protocol')
-			? Buffer.from(request.headers.get('sec-websocket-protocol') as string, 'base64url')
-			: await waitForFirstData(ws);
-
+		const raw_data = options.early_data ? Buffer.from(options.early_data, 'base64url') : await waitForFirstData(ws);
 		const conn_obj = {} as ConnObj;
-		const { address, version, is_udp, raw_data_offset } = ParseProtocolData(raw_data, user);
+		const { address, version, is_udp, raw_data_offset } = ParseProtocolData(raw_data, options.user);
 
 		if (is_udp) {
 			if (address.port !== 53) {
-				ws.close();
-				return;
+				return ws.close();
 			}
 
 			// redirect all dns request to DNS Over TCP
 			address.host = '8.8.8.8';
 		}
 
-		conn_obj.remote_socket = createConnection(
-			{
-				host: address.host,
-				port: address.port,
-				family: 4, // no effect though.
-			},
-			() => {
-				console.log(`${address.host}:${address.port} connection initiated`);
+		if (options.socks.relay) {
+			if (!options.socks.host || !options.socks.port) {
+				throw new Error('socks server not defined');
 			}
-		);
+
+			const socks = new Socks5({
+				host: options.socks.host,
+				port: options.socks.port,
+				user: options.socks?.user,
+				pass: options.socks?.pass,
+			});
+
+			conn_obj.remote_socket = await socks.OpenConnection(address.raw, address.port, address.stype!, () => {
+				console.log(`${address.host}:${address.port} connection initiated through socks`);
+			});
+		} else {
+			conn_obj.remote_socket = createConnection(
+				{
+					host: address.host,
+					port: address.port,
+					family: 4, // no effect though.
+				},
+				() => {
+					console.log(`${address.host}:${address.port} connection initiated`);
+				}
+			);
+		}
 
 		conn_obj.remote_socket.push(new Uint8Array([version, 0]));
 		conn_obj.remote_socket.on('data', (chunk) => ws.send(chunk.buffer));
-		conn_obj.remote_socket.on('close', () => ws.close());
 		conn_obj.remote_socket.write(raw_data.subarray(raw_data_offset));
 
 		ws.addEventListener('message', (event) => {
@@ -89,7 +114,17 @@ export default {
 
 			const { 0: client, 1: server } = new WebSocketPair();
 
-			HandleWsUpgrade(server, request, Buffer.from(env.USER.replaceAll('-', ''), 'hex')).catch((err) => {
+			HandleWsUpgrade(server, {
+				early_data: request.headers.get('sec-websocket-protocol'),
+				user: Buffer.from(env.USER.replaceAll('-', ''), 'hex'),
+				socks: {
+					relay: env.SOCKS_RELAY === 'true' || false,
+					host: env?.SOCKS_HOST,
+					port: env?.SOCKS_PORT,
+					user: env?.SOCKS_USER,
+					pass: env?.SOCKS_PASS,
+				},
+			}).catch((err) => {
 				console.log(err);
 			});
 

@@ -1,7 +1,11 @@
 interface VAddressData {
 	host: string;
 	port: number;
+	/** vless address type */
 	type: number;
+	raw: Buffer<ArrayBuffer>;
+	/** socks address type */
+	stype?: number;
 }
 
 interface VProtocolData {
@@ -9,6 +13,20 @@ interface VProtocolData {
 	version: number;
 	raw_data_offset: number;
 	is_udp: boolean;
+}
+
+export function IPv6ToString(buffer: Buffer<ArrayBuffer>): string {
+	let str = '';
+
+	for (let i = 0; i < 16; i++) {
+		str += buffer[i].toString(16).padStart(2, '0');
+
+		if (i % 2 !== 0 && i !== 15) {
+			str += ':';
+		}
+	}
+
+	return str;
 }
 
 export function ParseProtocolData(buffer: Buffer<ArrayBuffer>, user: Buffer<ArrayBuffer>): VProtocolData {
@@ -39,22 +57,24 @@ export function ParseProtocolData(buffer: Buffer<ArrayBuffer>, user: Buffer<Arra
 		address_len = 4;
 
 	switch (addrtype) {
-		case 1: // IPv4
-			address.host = buffer.subarray(address_offset, address_offset + address_len).join('.');
+		case 1: {
+			// IPv4
+			address.raw = buffer.subarray(address_offset, address_offset + address_len);
+			address.host = address.raw.join('.');
+			address.stype = 1;
 			break;
+		}
 		case 2: // Domain
-			address_len = buffer.readUInt8(address_offset++);
-			address.host = buffer.subarray(address_offset, address_offset + address_len).toString();
+			address_len = buffer.readUInt8(address_offset);
+			address.raw = buffer.subarray(address_offset, address_offset + address_len + 1);
+			address.host = address.raw.subarray(1).toString();
+			address.stype = 3;
 			break;
 		case 3: // IPv6
 			address_len = 16;
-			const tmp_host = [];
-
-			for (let i = address_offset; i < address_offset + address_len; i += 2) {
-				tmp_host.push(buffer.subarray(i, i + 2).toString('hex'));
-			}
-
-			address.host = tmp_host.join(':');
+			address.raw = buffer.subarray(address_offset, address_offset + address_len);
+			address.host = IPv6ToString(address.raw);
+			address.stype = 4;
 			break;
 		default:
 			throw new Error('invalid protocol address type');
@@ -63,7 +83,7 @@ export function ParseProtocolData(buffer: Buffer<ArrayBuffer>, user: Buffer<Arra
 	return {
 		address,
 		version,
-		raw_data_offset: address_offset + address_len,
+		raw_data_offset: address_offset + address.raw.byteLength,
 		is_udp: command === 2,
 	};
 }
