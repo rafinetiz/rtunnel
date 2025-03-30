@@ -2,7 +2,7 @@
 
 make your cloudflare workers as tunnel for VLESS Protocol
 
-# Install
+# Deploy
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/rafinetiz/rtunnel)
 
